@@ -1,10 +1,3 @@
-/*
- * @Author: Ziming.Liu 
- * @Date: 2021-06-Fr 03:28:56 
- * @Last Modified by:   Ziming.Liu 
- * @Last Modified time: 2021-06-Fr 03:28:56 
- */
-
 #include "multi_lidar_calibration.h"
 #include <chrono>
 
@@ -26,35 +19,35 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n) : nh_(n)
     // 发布转换后的激光点云
     final_point_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/final_point_cloud", 10);
 
-    // 订阅多个激光话题
+    // 订阅前后激光话题
     scan_front_subscriber_ = new message_filters::Subscriber<sensor_msgs::LaserScan>(nh_, target_lidar_topic_str_, 1);
     scan_back_subscriber_ = new message_filters::Subscriber<sensor_msgs::LaserScan>(nh_, source_lidar_topic_str_, 1);
-    scan_synchronizer_ = new message_filters::Synchronizer<SyncPolicyT>(SyncPolicyT(10), *scan_front_subscriber_, *scan_back_subscriber_);
+    scan_synchronizer_ = new message_filters::Synchronizer<SyncPolicyT>(SyncPolicyT(10), *scan_front_subscriber_, *scan_back_subscriber_);//Synchronize topics
     scan_synchronizer_->registerCallback(boost::bind(&MultiLidarCalibration::ScanCallBack, this, _1, _2));
 
     // 参数赋值
     is_first_run_ = true;
 
-    // 在main_laser_link下sub_laser_link的坐标
+    // 在front_laser_link下back_laser_link的坐标
     transform_martix_ = Eigen::Matrix4f::Identity(); //4 * 4 齐次坐标
-    // 在base_link坐标系下main_laser_link的坐标
+    // 在base_link坐标系下front_laser_link的坐标
     front_to_base_link_ = Eigen::Matrix4f::Identity();
 
     //点云指针赋值
     main_scan_pointcloud_ = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(new pcl::PointCloud<pcl::PointXYZ>());
     sub_scan_pointcloud_ = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(new pcl::PointCloud<pcl::PointXYZ>());
     final_registration_scan_ = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(new pcl::PointCloud<pcl::PointXYZ>());
-    // 使用在main_laser_link下sub_laser_link的坐标，把sub_laser_link下的激光转换到main_laser_link下
+    // 使用在front_laser_link下back_laser_link的坐标，把back_laser_link下的激光转换到front_laser_link下
     sub_scan_pointcloud_init_transformed_ = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(new pcl::PointCloud<pcl::PointXYZ>());
 }
 
 MultiLidarCalibration::~MultiLidarCalibration() {}
 
 /**
- * @brief 获取激光雷达间的坐标变换
+ * @brief 获取激光雷达间的坐标变换(机械外参)
  * 
  * @param transform_martix_ 激光雷达间的转换矩阵
- * @param front_to_base_link_ 在main_laser_link下sub_laser_link的坐标
+ * @param front_to_base_link_ 在front_laser_link下back_laser_link的坐标
  */
 void MultiLidarCalibration::GetFrontLasertoBackLaserTf()
 {
@@ -95,7 +88,7 @@ void MultiLidarCalibration::GetFrontLasertoBackLaserTf()
 
     front_to_base_link_.block<3, 3>(0, 0) = R;
     front_to_base_link_.block<3, 1>(0, 3) = t;
-    ROS_INFO_STREAM("main_laser_link in base_link matrix=\n"
+    ROS_INFO_STREAM("front_laser_link in base_link matrix=\n"
                     << front_to_base_link_);
 }
 
@@ -145,8 +138,8 @@ pcl::PointCloud<pcl::PointXYZ> MultiLidarCalibration::ConvertScantoPointCloud(co
 /**
  * @brief 多个激光雷达数据同步
  * 
- * @param in_main_scan_msg 激光雷达topic 1
- * @param in_sub_scan_msg 激光雷达topic 2
+ * @param in_main_scan_msg 前激光雷达topic 1
+ * @param in_sub_scan_msg 后激光雷达topic 2
  */
 void MultiLidarCalibration::ScanCallBack(const sensor_msgs::LaserScan::ConstPtr &in_main_scan_msg, const sensor_msgs::LaserScan::ConstPtr &in_sub_scan_msg)
 {
@@ -156,7 +149,7 @@ void MultiLidarCalibration::ScanCallBack(const sensor_msgs::LaserScan::ConstPtr 
 
 /**
  * @brief 两个激光雷达数据进行icp匹配
- * 
+ * @example： 1.引入必要文件 2.创建源点云 3.设置icp对象 4.设置输入点云 5.执行配准 6.检查配准是否成功 7.使用最终变换 
  */
 bool MultiLidarCalibration::ScanRegistration()
 {
@@ -165,27 +158,28 @@ bool MultiLidarCalibration::ScanRegistration()
         return false;
     }
 
-    // 对点云进行初始化旋转，back_link to front_link
+    // Initialize the point cloud rotation，back_link to front_link
     pcl::transformPointCloud(*sub_scan_pointcloud_, *sub_scan_pointcloud_init_transformed_, transform_martix_);
 
-    //hou激光雷达利用机械外参进行旋转
+    //LiDAR uses mechanical external parameters to rotate
 
-    // 最大欧式距离差值
+    // Maximum Euclidean distance difference
     icp_.setMaxCorrespondenceDistance(0.1);
-    // 迭代阈值，当前变换矩阵和当前迭代矩阵差异小于阈值，认为收敛
+    // Iteration threshold, when the difference between the current transformation matrix and the current iteration matrix is ​​less than the threshold,
+    // it is considered converged
     icp_.setTransformationEpsilon(1e-10);
-    // 均方误差和小于阈值停止迭代
+    // The iteration stops when the mean square error is less than the threshold
     icp_.setEuclideanFitnessEpsilon(0.01);
-    // 最多迭代次数
-    icp_.setMaximumIterations(50);
+    // Maximum number of iterations
+    icp_.setMaximumIterations(100);
 
     icp_.setInputSource(sub_scan_pointcloud_init_transformed_);
 
     icp_.setInputTarget(main_scan_pointcloud_);
-
+    // matching
     icp_.align(*final_registration_scan_);
-
-    if (icp_.hasConverged() == false && icp_.getFitnessScore() > 1.0)
+    // end or not
+    if (icp_.hasConverged() == false && icp_.getFitnessScore() > 0.05)//TEST: Expected scores are usually around 0.01 to 0.1.
     {
         ROS_WARN_STREAM("Not Converged ... ");
         return false;
@@ -282,6 +276,7 @@ void MultiLidarCalibration::Run()
     // 进行icp匹配，匹配失败返回
     if (!ScanRegistration())
     {
+        ROS_ERROR_STREAM("ICP matching fails!!!");
         return;
     }
 
