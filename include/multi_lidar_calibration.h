@@ -57,7 +57,7 @@ private:
     //  在base_link坐标系下main_laser_link的坐标
     float main_to_base_transform_x_;
     float main_to_base_transform_y_;
-    float main_to_base_transform_row_;
+    float main_to_base_transform_roll_;
     float main_to_base_transform_yaw_;
 
     // 第一次运行时进行矩阵赋值
@@ -110,6 +110,11 @@ private:
 
     // 可视化
     void View();
+    
+    //
+    Eigen::Quaternionf  qw;
+    Eigen::Vector3f     qt;
+
 };
 
 #endif //MULTI_LIDAR_CALIBRATION_H_

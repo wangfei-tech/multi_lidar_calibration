@@ -19,7 +19,7 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n) : nh_(n)
     nh_.param<float>("/multi_lidar_calibration_node/icp_score", icp_score_, 5.5487);
     nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_x", main_to_base_transform_x_, 0.352);
     nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_y", main_to_base_transform_y_, 0.224);
-    nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_row", main_to_base_transform_row_, -3.1415926);
+    nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_roll", main_to_base_transform_roll_, -3.1415926);
 
     nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_yaw", main_to_base_transform_yaw_, 2.35619);
 
@@ -67,26 +67,31 @@ void MultiLidarCalibration::GetFrontLasertoBackLaserTf()
     geometry_msgs::TransformStamped tfGeom;
     try
     {
-        tfGeom = buffer.lookupTransform(source_lidar_frame_str_, target_lidar_frame_str_, ros::Time::now(), ros::Duration(3.0));
+        tfGeom = buffer.lookupTransform(source_lidar_frame_str_, target_lidar_frame_str_, ros::Time(0), ros::Duration(3.0));
     }
     catch (tf2::TransformException &e)
     {
+        ROS_ERROR_STREAM("tf2::TransformException &e: "<<e.what());
         ROS_ERROR_STREAM("Lidar Transform Error ... ");
     }
 
     // tf2矩阵转换成Eigen::Matrix4f
-    Eigen::Quaternionf qw(tfGeom.transform.rotation.w, tfGeom.transform.rotation.x, tfGeom.transform.rotation.y, tfGeom.transform.rotation.z); //tf 获得的四元数
-    Eigen::Vector3f qt(tfGeom.transform.translation.x, tfGeom.transform.translation.y, tfGeom.transform.translation.z);                        //tf获得的平移向量
+    Eigen::Quaternionf qw_(tfGeom.transform.rotation.w, tfGeom.transform.rotation.x, tfGeom.transform.rotation.y, tfGeom.transform.rotation.z); //tf 获得的四元数
+    qw = qw_;
+    Eigen::Vector3f qt_(tfGeom.transform.translation.x, tfGeom.transform.translation.y, tfGeom.transform.translation.z);                        //tf获得的平移向量
+    qt = qt_;
     transform_martix_.block<3, 3>(0, 0) = qw.toRotationMatrix();
     transform_martix_.block<3, 1>(0, 3) = qt;
-
+    ROS_INFO_STREAM("back_laser_link in front_laser_link matrix=\n"
+                    << transform_martix_);
     // 绝对标定的前向激光到base_link的坐标转换
-    Eigen::Vector3f rpy(main_to_base_transform_row_, 0, main_to_base_transform_yaw_);
+    // 前激光雷达到baselink的坐标系转换
+    Eigen::Vector3f rpy(main_to_base_transform_roll_, 0, main_to_base_transform_yaw_);
     Eigen::Matrix3f R;
     R = Eigen::AngleAxisf(rpy[0], Eigen::Vector3f::UnitX()) *
         Eigen::AngleAxisf(rpy[1], Eigen::Vector3f::UnitY()) *
         Eigen::AngleAxisf(rpy[2], Eigen::Vector3f::UnitZ());
-    Eigen::Vector3f t(main_to_base_transform_x_, main_to_base_transform_y_, 0.242);
+    Eigen::Vector3f t(main_to_base_transform_x_, main_to_base_transform_y_, 0.0);
 
     front_to_base_link_.block<3, 3>(0, 0) = R;
     front_to_base_link_.block<3, 1>(0, 3) = t;
@@ -163,6 +168,8 @@ bool MultiLidarCalibration::ScanRegistration()
     // 对点云进行初始化旋转，back_link to front_link
     pcl::transformPointCloud(*sub_scan_pointcloud_, *sub_scan_pointcloud_init_transformed_, transform_martix_);
 
+    //hou激光雷达利用机械外参进行旋转
+
     // 最大欧式距离差值
     icp_.setMaxCorrespondenceDistance(0.1);
     // 迭代阈值，当前变换矩阵和当前迭代矩阵差异小于阈值，认为收敛
@@ -170,9 +177,10 @@ bool MultiLidarCalibration::ScanRegistration()
     // 均方误差和小于阈值停止迭代
     icp_.setEuclideanFitnessEpsilon(0.01);
     // 最多迭代次数
-    icp_.setMaximumIterations(100);
+    icp_.setMaximumIterations(50);
 
     icp_.setInputSource(sub_scan_pointcloud_init_transformed_);
+
     icp_.setInputTarget(main_scan_pointcloud_);
 
     icp_.align(*final_registration_scan_);
@@ -201,16 +209,20 @@ void MultiLidarCalibration::PrintResult()
     T = icp_.getFinalTransformation();
     Eigen::Matrix3f R3 = T.block<3, 3>(0, 0);
     Eigen::Vector3f t3 = T.block<3, 1>(0, 3);
+    ROS_INFO_STREAM("back_laser to front_laser R3 : \n"<< R3);
+    ROS_INFO_STREAM("back_laser to front_laser t3 : \n"<< t3);
 
     // main激光到base_link的坐标变换
     Eigen::Matrix3f R1 = front_to_base_link_.block<3, 3>(0, 0);
     Eigen::Vector3f t1 = front_to_base_link_.block<3, 1>(0, 3);
+    ROS_INFO_STREAM("front_laser to base_link R1 : \n"<< R1);
+    ROS_INFO_STREAM("front_laser to base_link t1 : \n"<< t1);
 
     // 在main激光雷达坐标系下的sub雷达的坐标位置,两个激光对称放置
-    Eigen::Matrix3f R4;
-    Eigen::Vector3f t4;
-    R4 << -1, 0, 0, 0, -1, 0, 0, 0, 1;
-    t4 << -0.704, -0.448, 0;
+    Eigen::Matrix3f R4 = qw.toRotationMatrix();
+    Eigen::Vector3f t4 = qt;
+    ROS_INFO_STREAM("front_laser to base_link R4 : \n"<< t4);
+    ROS_INFO_STREAM("front_laser to base_link t4 : \n"<< t4);
 
     // 变换结果是以base_link坐标系下的sub激光雷达的坐标
     Eigen::Matrix3f R2 = R4 * R1 * R3;
