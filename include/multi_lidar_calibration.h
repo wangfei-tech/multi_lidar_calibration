@@ -53,6 +53,7 @@ private:
 
     // icp匹配得分
     float icp_score_;
+    float fitness_score_;
 
     //  在base_link坐标系下main_laser_link的坐标
     float main_to_base_transform_x_;

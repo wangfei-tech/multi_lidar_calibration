@@ -10,6 +10,7 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n) : nh_(n)
     nh_.param<std::string>("/multi_lidar_calibration_node/source_lidar_frame", source_lidar_frame_str_, "sub_laser_link");
     nh_.param<std::string>("/multi_lidar_calibration_node/target_lidar_frame", target_lidar_frame_str_, "main_laser_link");
     nh_.param<float>("/multi_lidar_calibration_node/icp_score", icp_score_, 5.5487);
+    nh_.param<float>("/multi_lidar_calibration_node/fitness_score", fitness_score_, 1.0);
     nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_x", main_to_base_transform_x_, 0.352);
     nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_y", main_to_base_transform_y_, 0.224);
     nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_roll", main_to_base_transform_roll_, -3.1415926);
@@ -169,7 +170,7 @@ bool MultiLidarCalibration::ScanRegistration()
     // it is considered converged
     icp_.setTransformationEpsilon(1e-10);
     // The iteration stops when the mean square error is less than the threshold
-    icp_.setEuclideanFitnessEpsilon(0.01);
+    icp_.setEuclideanFitnessEpsilon(0.005);
     // Maximum number of iterations
     icp_.setMaximumIterations(100);
 
@@ -179,7 +180,8 @@ bool MultiLidarCalibration::ScanRegistration()
     // matching
     icp_.align(*final_registration_scan_);
     // end or not
-    if (icp_.hasConverged() == false && icp_.getFitnessScore() > 0.05)//TEST: Expected scores are usually around 0.01 to 0.1.
+    std:cout<<"hasConverged: "<<icp_.hasConverged()<<"getFitnessScore():"<<icp_.getFitnessScore()<<std::endl;
+    if (icp_.hasConverged() == false && icp_.getFitnessScore() > fitness_score_)//TEST: Expected scores are usually around 0.01 to 0.1.
     {
         ROS_WARN_STREAM("Not Converged ... ");
         return false;
@@ -195,6 +197,7 @@ void MultiLidarCalibration::PrintResult()
 {
     if (icp_.getFitnessScore() > icp_score_)
     {
+        ROS_WARN_STREAM("icp_.getFitnessScore(): "<<icp_.getFitnessScore());
         return;
     }
 
@@ -215,17 +218,17 @@ void MultiLidarCalibration::PrintResult()
     // 在main激光雷达坐标系下的sub雷达的坐标位置,两个激光对称放置
     Eigen::Matrix3f R4 = qw.toRotationMatrix();
     Eigen::Vector3f t4 = qt;
-    ROS_INFO_STREAM("front_laser to base_link R4 : \n"<< t4);
-    ROS_INFO_STREAM("front_laser to base_link t4 : \n"<< t4);
+    ROS_INFO_STREAM("front_laser to back_laser R4 : \n"<< R4);
+    ROS_INFO_STREAM("front_laser to back_laser t4 : \n"<< t4);
 
     // 变换结果是以base_link坐标系下的sub激光雷达的坐标
-    Eigen::Matrix3f R2 = R4 * R1 * R3;
-    Eigen::Vector3f t2 = R1 * t3 + t1 + t4;
+    Eigen::Matrix3f R2 =  R1 * R3;
+    Eigen::Vector3f t2 = R1 * t3 + t3;
 
     // 输出转换关系
     Eigen::Vector3f eulerAngle = R2.eulerAngles(0, 1, 2);
     ROS_INFO_STREAM("eulerAngle=\n"
-                    << eulerAngle);
+                    << eulerAngle*(180.0 / M_PI));
     ROS_INFO_STREAM("transform vector=\n"
                     << t2);
 }

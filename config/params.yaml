@@ -1,11 +1,12 @@
 # 由source 指向 target
-source_lidar_topic: /backscan
-target_lidar_topic: /frontscan
+source_lidar_topic: /backscan  #根据实际点云topic填写
+target_lidar_topic: /frontscan #根据实际点云topic填写
 
-source_lidar_frame: back_laser
-target_lidar_frame: front_laser
+source_lidar_frame: back_laser  # frame_id
+target_lidar_frame: front_laser # frame_id
 
 icp_score: 5.386
+fitness_score: 0.1
 
 # 在base_link坐标系下主雷达的坐标
 main_to_base_transform_x: 1.7735
