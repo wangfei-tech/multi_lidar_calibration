@@ -1,10 +1,3 @@
-/*
- * @Author: Ziming.Liu 
- * @Date: 2021-06-Fr 03:29:18 
- * @Last Modified by:   Ziming.Liu 
- * @Last Modified time: 2021-06-Fr 03:29:18 
- */
-
 #ifndef MULTI_LIDAR_CALIBRATION_H_
 #define MULTI_LIDAR_CALIBRATION_H_
 
@@ -50,6 +43,7 @@ private:
     // 激光雷达坐标系
     std::string source_lidar_frame_str_;
     std::string target_lidar_frame_str_;
+    std::string source_frame_str_;
 
     // icp匹配得分
     float icp_score_;
@@ -61,13 +55,24 @@ private:
     float main_to_base_transform_roll_;
     float main_to_base_transform_yaw_;
 
+    //  在base_link坐标系下back_laser_link的坐标
+    float main_to_back_transform_x_;
+    float main_to_back_transform_y_;
+    float main_to_back_transform_roll_;
+    float main_to_back_transform_yaw_;
+
     // 第一次运行时进行矩阵赋值
     bool is_first_run_;
 
     // 两个激光间的transfrom，通过tf2获得
     Eigen::Matrix4f transform_martix_;
-    // 主激光到base_link的TF
+    // base_link下的front_laser通过tf2获得
+    Eigen::Matrix4f T_base_to_front;
+
+    // 前激光雷达到base_link的TF
     Eigen::Matrix4f front_to_base_link_;
+    // 后激光雷达到base_link的TF
+    Eigen::Matrix4f back_to_base_link_;
 
     ros::NodeHandle nh_;
     // 纠正激光输出，类型pointcloud2
@@ -111,8 +116,13 @@ private:
 
     // 可视化
     void View();
-    
-    //
+
+    // 变换矩阵进行提取
+    void decomposeTransform(const Eigen::Matrix4f& T);
+
+    //矩阵转换
+    Eigen::Matrix4f transformToEigenMatrix(const geometry_msgs::TransformStamped& transformStamped);
+
     Eigen::Quaternionf  qw;
     Eigen::Vector3f     qt;
 
