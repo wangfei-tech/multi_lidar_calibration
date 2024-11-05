@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(multi_lidar_calibration)
-
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++11)
 add_compile_options(-Wno-deprecated-declarations) #忽略已经弃用的声明
@@ -20,6 +19,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 find_package(PCL REQUIRED QUIET)
 
+find_package(YAML-CPP REQUIRED)
 
 catkin_package(
  INCLUDE_DIRS include
@@ -39,7 +39,7 @@ include
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
 )
-
+include_directories(${YAML_CPP_INCLUDE_DIRS})
 ## Declare a C++ library
  add_library(multi_lidar_calibration
    src/multi_lidar_calibration.cc
@@ -48,7 +48,7 @@ include
 
 ## Specify libraries to link a library or executable target against
  target_link_libraries(multi_lidar_calibration
-   ${catkin_LIBRARIES} ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES} ${PCL_LIBRARIES}
+   ${catkin_LIBRARIES} ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES} ${PCL_LIBRARIES}  ${YAML_CPP_LIBRARIES}
  )
 
 add_executable(multi_lidar_calibration_node src/multi_lidar_calibration_node.cc)

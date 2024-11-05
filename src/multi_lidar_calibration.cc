@@ -3,6 +3,9 @@
 #include <tf2_eigen/tf2_eigen.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <chrono>
+#include <yaml-cpp/yaml.h>
+#include <fstream>
+#include <iostream>
 
 MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n) : nh_(n)
 {
@@ -13,6 +16,8 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n) : nh_(n)
     nh_.param<std::string>("/multi_lidar_calibration_node/source_lidar_frame", source_lidar_frame_str_, "sub_laser_link");
     nh_.param<std::string>("/multi_lidar_calibration_node/target_lidar_frame", target_lidar_frame_str_, "main_laser_link");
     nh_.param<std::string>("/multi_lidar_calibration_node/base_link", source_frame_str_, "base_link");
+    nh_.param<std::string>("/multi_lidar_calibration_node/store_param_file", store_param_file_, "calibrated_pose.yaml");
+
     nh_.param<float>("/multi_lidar_calibration_node/icp_score", icp_score_, 5.5487);
     nh_.param<float>("/multi_lidar_calibration_node/fitness_score", fitness_score_, 1.0);
     nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_x", main_to_base_transform_x_, 0.352);
@@ -317,6 +322,16 @@ void MultiLidarCalibration::decomposeTransform(const Eigen::Matrix4f &T)
     Eigen::Vector3f euler_angles = rotation.eulerAngles(2, 1, 0); // yaw, pitch, roll
     std::cout << "Euler angles (yaw, pitch, roll): \n"
               << (euler_angles)/M_PI*180.0 << std::endl;
+
+    if(writeCalibratedPoseToYaml(translation,euler_angles,store_param_file_))
+    {
+        std::cout<<"calibrate and write success!"<<std::endl;
+        ros::shutdown();
+    }
+    else
+    {
+        std::cout<<"calibrate and write failed!"<<std::endl;
+    }
 }
 /**
  * @brief transfrom形式转换成Eigen矩阵的形式
@@ -325,6 +340,54 @@ Eigen::Matrix4f MultiLidarCalibration::transformToEigenMatrix(const geometry_msg
 {
     Eigen::Affine3f affine = tf2::transformToEigen(transformStamped.transform).cast<float>();
     return affine.matrix();
+}
+/**
+ * @brief 写入yaml文件方便后边tf读取
+ */
+bool MultiLidarCalibration::writeCalibratedPoseToYaml(const Eigen::Vector3f &translation, const Eigen::Vector3f &euler_angles, const std::string& filename)
+{
+    YAML::Node node;
+    std::string calibrated_pose_path;
+    // 提取旋转角
+    node["rotation_angle"] = euler_angles(0) / M_PI *180.0;
+    // 提取平移向量
+    node["z"] = translation(2);
+    node["y"] = translation(1);
+    node["x"] = translation(0);
+
+    const char* path = getenv("CALIBRATION_WS_PATH");
+    if (path)
+    {
+        calibrated_pose_path = std::string(path) +"/"+ filename;
+        std::cout<<"calibrated_pose_path: "<<calibrated_pose_path<<std::endl;
+    }
+    else
+    {
+        std::cerr << "Can't get env !!! "<<std::endl;
+        return false;
+    }
+    std::ofstream fout(calibrated_pose_path);//open file if file doesn't exist create one
+
+    if (!fout.is_open())
+    {
+        std::cerr << "Can't open file: " << filename << std::endl;
+        return false;
+    }
+
+    fout << node;
+
+    if (fout.fail())
+    {
+        std::cerr << "Write failed : " << filename << std::endl;
+        return false;
+    }
+    else
+    {
+        std::cout << "Write success: " << filename << std::endl;
+    }
+    fout.close();
+
+    return true;
 }
 /**
  * @brief 运行主函数

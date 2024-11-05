@@ -44,6 +44,9 @@ private:
     std::string source_lidar_frame_str_;
     std::string target_lidar_frame_str_;
     std::string source_frame_str_;
+    
+    // 存放参数yaml文件位置
+    std::string store_param_file_;
 
     // icp匹配得分
     float icp_score_;
@@ -122,6 +125,9 @@ private:
 
     //矩阵转换
     Eigen::Matrix4f transformToEigenMatrix(const geometry_msgs::TransformStamped& transformStamped);
+
+    //calibrated data is written into the yaml file
+    bool writeCalibratedPoseToYaml(const Eigen::Vector3f &translation, const Eigen::Vector3f &euler_angles, const std::string& filename);
 
     Eigen::Quaternionf  qw;
     Eigen::Vector3f     qt;

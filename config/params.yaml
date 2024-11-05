@@ -23,3 +23,4 @@ main_to_back_transform_roll: 0.0 # 反装为负
 main_to_back_transform_yaw: 1.8683531
 
 # 校准后的位姿
+store_param_file: src/multi_lidar_calibration/config/calibrated_pose.yaml
